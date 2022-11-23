@@ -1,0 +1,125 @@
+---
+title: "p8105_hw6_af3341"
+author: "Alana Ferris"
+date: "2022-11-22"
+output: github_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+
+library(tidyverse)
+library(modelr)
+library(mgcv)
+
+set.seed(1)
+
+knitr::opts_chunk$set(
+  fig.width = 6,
+  fig.asp = .6,
+  out.width = "90%"
+)
+
+theme_set(theme_minimal() + theme(legend.position = "bottom"))
+options(
+  ggplot2.continuous.colour = "viridis",
+  ggplot2.continuous.fill = "viridis"
+)
+
+scale_colour_discrete = scale_colour_viridis_d
+scale_fill_discrete = scale_fill_viridis_d
+```
+
+# Problem 1
+
+# Problem 2
+
+## Reading in and tidying data
+```{r, message = FALSE, warning = FALSE}
+homicides = 
+  read_csv("./data/homicide-data.csv")
+
+total_homicide = 
+  homicides %>% 
+  mutate(city = str_replace(city, "$", ", ")) %>% 
+  mutate(city_state = 
+    paste0(city, state)) %>% 
+  mutate(unsolved = 
+           case_when(disposition == 'Closed without arrest' | 
+                    disposition == 'Open/No arrest' ~ TRUE, 
+                    disposition == 'Closed by arrest'~ FALSE)) %>% 
+  mutate(
+    victim_age = as.numeric(victim_age),
+    victim_race = fct_relevel(victim_race, "White")) %>% 
+  filter(city_state != "Dallas, TX" && 
+         city_state != "Pheonix, AZ" && 
+         city_state != "Kansas City, MO" && 
+         city_state != "Tulsa, AL") %>% ## for some reason it isn't dropping tulsa, AL
+  filter(victim_race == "White" | victim_race == "Black") %>% 
+  group_by(city_state)
+
+```
+
+## Fitting glm function to Baltimore 
+
+```{r}
+balt_df = 
+  total_homicide %>% 
+  filter(city_state == "Baltimore, MD") %>% 
+  select(unsolved, victim_age, victim_race, victim_sex)
+
+fit_logistic = 
+  balt_df %>%
+  glm(unsolved ~ victim_age + victim_race + victim_sex, 
+      data = ., 
+      family = binomial()) 
+  
+ fit_logistic %>%  
+   broom::tidy() %>% 
+   mutate(
+    OR = exp(estimate),
+    CI_lower = exp(estimate - 1.96 * std.error),
+    CI_upper = exp(estimate + 1.96 * std.error)
+  ) %>% 
+  select(term, OR, starts_with("CI")) %>% 
+  knitr::kable(digits = 3)
+```
+Homicides in which the victim is Black or Male increases odds of the homicide being unresolved by about 2x compared to victims who are White or Female. There is no association between a victim's age and the odds that their homicide is unresolved.   
+
+## glm for all cities using map, list cols, and unnesting 
+
+```{r}
+all_cities =
+  total_homicide %>% 
+  select(unsolved, victim_age, victim_race, victim_sex)
+
+all_nested = 
+  all_cities %>% 
+  nest(data = unsolved:victim_sex)
+
+all_unnested = 
+  all_nested %>% 
+  mutate(
+    glm_cities = map(.x = data, ~glm(unsolved ~ victim_age + victim_race + victim_sex, 
+                                     data = .x, 
+                                     family = binomial())),
+    results = map(glm_cities, broom::tidy)
+  ) %>% 
+  select(city_state, results) %>% 
+  unnest(results) %>% 
+  mutate(
+    OR = exp(estimate),
+    CI_lower = exp(estimate - 1.96 * std.error),
+    CI_upper = exp(estimate + 1.96 * std.error)
+  ) %>% 
+  select(city_state, term, OR, starts_with("CI"))
+
+##getting an error that says variable lengths differ for victim_age and i don't understand why, i tried dropping_nas of victim_age but that didn't solve my problem just created a new one 
+
+```
+##Create a plot that shows the estimated ORs and CIs for each city. Organize cities according to estimated OR, and comment on the plot
+
+```{r}
+all_unnested
+```
+
