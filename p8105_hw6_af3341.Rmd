@@ -11,11 +11,12 @@ knitr::opts_chunk$set(echo = TRUE)
 library(tidyverse)
 library(modelr)
 library(mgcv)
+library(patchwork)
 
 set.seed(1)
 
 knitr::opts_chunk$set(
-  fig.width = 6,
+  fig.width = 7,
   fig.asp = .6,
   out.width = "90%"
 )
@@ -30,7 +31,84 @@ scale_colour_discrete = scale_colour_viridis_d
 scale_fill_discrete = scale_fill_viridis_d
 ```
 
+
 # Problem 1
+
+## Reading in the data
+```{r, message = FALSE, warning = FALSE}
+weather_df = 
+  rnoaa::meteo_pull_monitors(
+    c("USW00094728"),
+    var = c("PRCP", "TMIN", "TMAX"), 
+    date_min = "2017-01-01",
+    date_max = "2017-12-31") %>%
+  mutate(
+    name = recode(id, USW00094728 = "CentralPark_NY"),
+    tmin = tmin / 10,
+    tmax = tmax / 10) %>%
+  select(name, id, everything())
+```
+
+## 5000 bootstrap samples
+```{r, message = FALSE, warning = FALSE}
+weather_df %>% 
+  modelr::bootstrap(n = 5000) %>% 
+  mutate(
+    models = map(strap, ~lm(tmax ~ tmin, data = .x) ),
+    results = map(models, broom::glance)) %>% 
+  select(-strap, -models) %>% 
+  unnest(results) %>% 
+  ggplot(aes(x = r.squared)) + geom_density()
+```
+
+The 5000 bootstrap sample distribution appears left skewed. This implies that the majority of 5000 bootstrap sample $R^2$ values are closer to 1, which indicates our model is a good fit for this data set. 
+
+## Reading in the data
+```{r, message = FALSE, warning = FALSE}
+weather_df = 
+  rnoaa::meteo_pull_monitors(
+    c("USW00094728"),
+    var = c("PRCP", "TMIN", "TMAX"), 
+    date_min = "2017-01-01",
+    date_max = "2017-12-31") %>%
+  mutate(
+    name = recode(id, USW00094728 = "CentralPark_NY"),
+    tmin = tmin / 10,
+    tmax = tmax / 10) %>%
+  select(name, id, everything())
+```
+
+## 5000 bootstrap samples
+```{r, message = FALSE, warning = FALSE}
+weather_df %>% 
+  modelr::bootstrap(n = 5000) %>% 
+  mutate(
+    models = map(strap, ~lm(tmax ~ tmin, data = .x) ),
+    results = map(models, broom::glance)) %>% 
+  select(-strap, -models) %>% 
+  unnest(results) %>% 
+  ggplot(aes(x = r.squared)) + geom_density()
+```
+
+The 5000 bootstrap sample distribution appears left skewed. This implies that the majority of 5000 bootstrap sample $R^2$ values are closer to 1, which indicates our model is a good fit for this data set. 
+
+## 95% confidence interval for the 5000 bootstrap samples 
+```{r, message = FALSE, warning = FALSE}
+weather_df %>% 
+  modelr::bootstrap(n = 5000) %>% 
+  mutate(
+    models = map(strap, ~lm(tmax ~ tmin, data = .x) ),
+    results = map(models, broom::tidy)) %>% 
+  select(-strap, -models) %>% 
+  unnest(results) %>% 
+  select(id = `.id`, term, estimate) %>% 
+  pivot_wider(
+    names_from = term, 
+    values_from = estimate) %>% 
+  rename(beta0 = `(Intercept)`, beta1 = tmin) %>% 
+  mutate(log_b0b1 = log(beta0 * beta1)) %>% 
+  ggplot(aes(x = log_b0b1)) + geom_density()
+```
 
 # Problem 2
 
@@ -130,7 +208,7 @@ all_unnested %>%
   geom_errorbar(aes(x = city_state, ymin = OR - CI_lower, ymax = OR + CI_upper)) + 
   theme(axis.text.x = element_text(angle = 65, hjust = 1, size = 6)) +
    labs(
-    title = "Odds of a Homicide Being Unsolved Based on Victim Sex in 50 Major U.S. Cities",
+    title = "Odds of a Homicide Being Unsolved Based on Victim Sex Across Cities",
     x = "U.S. City",
     y = "Odds Ratio")
 ```
@@ -163,27 +241,25 @@ fit = birthweight %>%
     mrace = fct_infreq(mrace),
     babysex = fct_infreq(babysex)) %>% 
     lm(bwt ~ mrace + smoken + babysex + gaweeks + parity + blength, data = .) 
-
+  
 fit %>% 
   broom::tidy() %>% 
   knitr::kable(digits = 4)
 
-modelr::add_residuals(birthweight, fit) %>% 
-  ggplot(aes(x = bwt, y = resid)) + 
-  geom_point()
+predict_table = add_predictions(birthweight, fit) %>% 
+  select(bwt, pred, everything())
 
-modelr::add_predictions(birthweight, fit) %>% 
-  ggplot(aes(x = bwt, y = pred)) + 
+modelr::add_residuals(predict_table, fit) %>% 
+  ggplot(aes(x = pred, y = resid)) + 
   geom_point()
 ```
 
-When building my regression model, I included factors that are hypothesized to impact birthweight including the mother's race and smoking habits, the baby's sex, gestational age, and number of live births the mother had prior to this pregnancy. 
+When building the regression model, I included factors that have been shown to impact birthweight: mother's race, mother's smoking habits, number of live births the mother had prior to this pregnancy, baby's sex, gestational age, length.  
 
 ## 2 models for comparison
 
 ```{r, message = FALSE, warning = FALSE}
-length_gsa =
-  birthweight %>% 
+length_gsa = birthweight %>% 
   lm(bwt ~ blength + gaweeks, data = .)
 
 multi = birthweight %>% 
